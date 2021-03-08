@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-from __future__ import division
 
-import re
 import os
-import sys
+import re
 import random
 import shutil
 import string
@@ -27,18 +25,13 @@ from pdfminer.layout import (
     LTTextLineHorizontal,
     LTTextLineVertical,
     LTImage,
+    LTLine,
+    LTRect
 )
 
-
-PY3 = sys.version_info[0] >= 3
-if PY3:
-    from urllib.request import urlopen
-    from urllib.parse import urlparse as parse_url
-    from urllib.parse import uses_relative, uses_netloc, uses_params
-else:
-    from urllib2 import urlopen
-    from urlparse import urlparse as parse_url
-    from urlparse import uses_relative, uses_netloc, uses_params
+from urllib.request import Request, urlopen
+from urllib.parse import urlparse as parse_url
+from urllib.parse import uses_relative, uses_netloc, uses_params
 
 
 _VALID_URLS = set(uses_relative + uses_netloc + uses_params)
@@ -88,13 +81,12 @@ def download_url(url):
         Temporary filepath.
 
     """
-    filename = "{}.pdf".format(random_string(6))
+    filename = f"{random_string(6)}.pdf"
     with tempfile.NamedTemporaryFile("wb", delete=False) as f:
-        obj = urlopen(url)
-        if PY3:
-            content_type = obj.info().get_content_type()
-        else:
-            content_type = obj.info().getheader("Content-Type")
+        headers = {"User-Agent": "Mozilla/5.0"}
+        request = Request(url, None, headers)
+        obj = urlopen(request)
+        content_type = obj.info().get_content_type()
         if content_type != "application/pdf":
             raise NotImplementedError("File format not supported")
         f.write(obj.read())
@@ -123,9 +115,7 @@ def validate_input(kwargs, flavor="lattice"):
         isec = set(parser_kwargs).intersection(set(input_kwargs.keys()))
         if isec:
             raise ValueError(
-                "{} cannot be used with flavor='{}'".format(
-                    ",".join(sorted(isec)), flavor
-                )
+                f"{','.join(sorted(isec))} cannot be used with flavor='{flavor}'"
             )
 
     if flavor == "lattice":
@@ -423,7 +413,7 @@ def text_strip(text, strip=""):
         return text
 
     stripped = re.sub(
-        r"[{}]".format("".join(map(re.escape, strip))), "", text, re.UNICODE
+        fr"[{''.join(map(re.escape, strip))}]", "", text, re.UNICODE
     )
     return stripped
 
@@ -660,9 +650,7 @@ def get_table_index(
                 text_range = (t.x0, t.x1)
                 col_range = (table.cols[0][0], table.cols[-1][1])
                 warnings.warn(
-                    "{} {} does not lie in column range {}".format(
-                        text, text_range, col_range
-                    )
+                    f"{text} {text_range} does not lie in column range {col_range}"
                 )
             r_idx = r
             c_idx = lt_col_overlap.index(max(lt_col_overlap))
@@ -794,7 +782,7 @@ def get_page_layout(
         parser = PDFParser(f)
         document = PDFDocument(parser)
         if not document.is_extractable:
-            raise PDFTextExtractionNotAllowed
+            raise PDFTextExtractionNotAllowed(f"Text extraction is not allowed: {filename}")
         laparams = LAParams(
             char_margin=char_margin,
             line_margin=line_margin,
@@ -852,3 +840,46 @@ def get_text_objects(layout, ltype="char", t=None):
     except AttributeError:
         pass
     return t
+
+
+def classify(filename):
+    # with open(filename, "rb") as f:
+    # parser = PDFParser(f)
+    # document = PDFDocument(parser)
+    # if not document.is_extractable:
+    #     raise PDFTextExtractionNotAllowed(f"Text extraction is not allowed: {filename}")
+
+    document = open(filename, 'rb')
+    rsrcmgr = PDFResourceManager()
+    # Set parameters for analysis.
+    laparams = LAParams()
+    # Create a PDF page aggregator object.
+    device = PDFPageAggregator(rsrcmgr, laparams=laparams)
+    interpreter = PDFPageInterpreter(rsrcmgr, device)
+
+    #Defining if the document has table lines or not
+    lattice =0
+    stream = 0
+
+    for page in PDFPage.get_pages(document, check_extractable=False):
+        lines = 0
+        rectangles = 0
+        interpreter.process_page(page)
+        layout = device.get_result()
+        for lt_obj in layout:
+            if isinstance(lt_obj, LTLine):
+                lines += 1
+            elif isinstance(lt_obj, LTRect):
+                rectangles += 1
+
+        if lines > 10 or rectangles > 10:
+            lattice += 1
+        else:
+            stream += 1
+
+    if lattice >= stream:
+        flavor = "lattice"
+        return flavor
+    else:
+        flavor = "stream"
+        return flavor

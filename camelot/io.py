@@ -110,10 +110,10 @@ def read_pdf(
         validate_input(kwargs, flavor=flavor)
         p = PDFHandler(filepath, pages=pages, password=password)
         kwargs = remove_extra(kwargs, flavor=flavor)
-        tables = p.parse(
+        flavor, tables = p.parse(
             flavor=flavor,
             suppress_stdout=suppress_stdout,
             layout_kwargs=layout_kwargs,
             **kwargs
         )
-        return tables
+        return flavor, tables

@@ -14,7 +14,20 @@ from .utils import (
     get_rotation,
     is_url,
     download_url,
+    classify
 )
+
+from pdfminer.converter import PDFPageAggregator
+from pdfminer.layout import LAParams
+from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+from pdfminer.pdfpage import PDFPage
+from pdfminer.layout import (
+     LTLine, 
+     LTTextLineHorizontal, 
+     LTTextLineVertical, 
+     LTTextLine, 
+     LTRect
+    )
 
 
 class PDFHandler(object):
@@ -106,7 +119,7 @@ class PDFHandler(object):
             infile = PdfFileReader(fileobj, strict=False)
             if infile.isEncrypted:
                 infile.decrypt(self.password)
-            fpath = os.path.join(temp, "page-{0}.pdf".format(page))
+            fpath = os.path.join(temp, f"page-{page}.pdf")
             froot, fext = os.path.splitext(fpath)
             p = infile.getPage(page - 1)
             outfile = PdfFileWriter()
@@ -135,8 +148,11 @@ class PDFHandler(object):
                 with open(fpath, "wb") as f:
                     outfile.write(f)
 
+
+
+
     def parse(
-        self, flavor="lattice", suppress_stdout=False, layout_kwargs={}, **kwargs
+        self,  flavor="lattice", suppress_stdout=False, layout_kwargs={}, **kwargs
     ):
         """Extracts tables by calling parser.get_tables on all single
         page PDFs.
@@ -164,12 +180,15 @@ class PDFHandler(object):
             for p in self.pages:
                 self._save_page(self.filepath, p, tempdir)
             pages = [
-                os.path.join(tempdir, "page-{0}.pdf".format(p)) for p in self.pages
+                os.path.join(tempdir, f"page-{p}.pdf") for p in self.pages
             ]
+
+            flavor = classify(self.filepath)
+
             parser = Lattice(**kwargs) if flavor == "lattice" else Stream(**kwargs)
             for p in pages:
                 t = parser.extract_tables(
                     p, suppress_stdout=suppress_stdout, layout_kwargs=layout_kwargs
                 )
                 tables.extend(t)
-        return TableList(sorted(tables))
+        return flavor, TableList(sorted(tables))
